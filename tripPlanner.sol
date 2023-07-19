@@ -1,5 +1,5 @@
-// SPDX-License-Identifier:MIT
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity >=0.8.2 <0.9.0;
 contract demo{
 
     struct trip{
@@ -12,17 +12,30 @@ contract demo{
         //uint collectedFund;
         bool IsConfirmed;
     }
+    
     address[] public group;
     uint TotalTrips = 0;
     mapping(uint => trip) public AllTrips;
     mapping(uint => mapping(address => bool)) public userVote;
     mapping(address => bool) public userShare;
-    trip public st;
+    trip st;
     trip public selectedTrip;
     uint public selectedTripId;
+    address public owner;
+    bool isTripSelected;
+    event tripStarted(string message);
 
-    constructor( address[] memory friends){
-        group = friends;
+    constructor( ){
+        owner = msg.sender;
+        group.push(msg.sender);
+    }
+
+    function addGroupMember(address[] memory people) public {
+        require(people.length > 0 , "No people to enter");
+        for(uint i = 0 ; i < people.length ; i++){
+            require(people[i] != address(0) , "Enter valid address ");
+            group.push(people[i]);
+        }
     }
 
     function checkUserExists(address u) internal view returns(bool){
@@ -51,17 +64,20 @@ contract demo{
         require(_budget >= 1 ether , "Enter valid budget value");
         require(checkUserExists(msg.sender) , "You are not a part of group");
         require(!checkTripExists(_place) , "Trips already exists");
-        TotalTrips++;
+        
         trip memory newTrip = trip(_place , _budget , msg.sender , 0, 0, 0, false);
-        AllTrips[TotalTrips] = newTrip;
+        
+        AllTrips[TotalTrips ] = newTrip;
+        TotalTrips++;
         
     }
 
     function Vote(uint tripId , uint v) public{
         require(checkUserExists(msg.sender) , "You are not a part of group");
         require(v == 0 || v == 1 , "Enter 1 to agree/yes or Enter 0 to disagree/no");
-        trip storage t = AllTrips[tripId];
+        trip storage t = AllTrips[tripId ];
         require(bytes(t.place).length > 0 , "Trip doesn't exists");
+        require(msg.sender != t.person , "you can't vote for the trip you created");
         require(t.budget > 0 , "Trip budget should be greater than 0");
         require(userVote[tripId][msg.sender] == false , "Already voted");
         require(t.IsConfirmed == false, "Trip  has already been confirmed");
@@ -76,8 +92,24 @@ contract demo{
         userVote[tripId][msg.sender] = true;
     }
 
+    function isVotingCompleted() public view returns(bool){
+        trip memory t ;
+        uint counter = 0;
+        for(uint i = 0 ; i < TotalTrips ; i++){
+            t = AllTrips[i];
+            if(t.noOfVotes == group.length-1){
+                counter++;
+            }
+        }
+        if(counter == TotalTrips)
+            return true;
+
+        return false;
+    }
+
     function CheckTripDestination() public returns(uint ,trip memory){
         require(checkUserExists(msg.sender) , "You are not a part of group");
+        require(isVotingCompleted() , "Voting is not ended");
         require(TotalTrips > 0 , "No trip added");
         trip memory t = AllTrips[0];
         uint confirmedTripId = 0;
@@ -89,18 +121,39 @@ contract demo{
                 confirmedTripId = i;
             }
         }
+        isTripSelected = true;
         selectedTripId = confirmedTripId;
+        trip storage t2 = AllTrips[selectedTripId];
+        t2.IsConfirmed = true;
         selectedTrip = t;
         return (confirmedTripId, AllTrips[confirmedTripId]);
     }
 
-    function payYourShare() public payable{
+    function startTrip() public  {
+        require(checkUserExists(msg.sender) , "You are not a part of group");
+        require(isVotingCompleted() , "Voting is not ended");
+        require(TotalTrips > 0 , "No trip added");
+        require(isTripSelected , "No trip selected till NoW!");
+
+        trip memory t = AllTrips[selectedTripId];
+        require(address(this).balance >= t.budget * group.length, "Wallet balance does't match trip budget");
+        emit tripStarted("Trip has been started");
+    }
+
+    function checkBalance() public view returns(uint){
+        return address(this).balance;
+    }
+
+    function payYourShare() public payable {
         require(checkUserExists(msg.sender), "You are not a part of the group");
-            require(selectedTrip.budget > 0, "No trip selected");
-            require(msg.value >= selectedTrip.budget, "Enter valid amount");
-        require(userVote[selectedTripId][msg.sender]== false , "You have already contributed");
+        require(selectedTrip.budget > 0, "No trip selected");
+        //require(userVote[selectedTripId][msg.sender] == true, "You have not voted");
+        require(msg.value >= selectedTrip.budget, "Enter valid amount");
+        trip memory t = AllTrips[selectedTripId];
+        if(t.person != msg.sender){
+            require(userVote[selectedTripId][msg.sender] == true, "You have not voted");
+        }
         userVote[selectedTripId][msg.sender] = true;
         userShare[msg.sender] = true;
-        
     }
 }
