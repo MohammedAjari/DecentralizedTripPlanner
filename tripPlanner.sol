@@ -17,13 +17,16 @@ contract demo{
     uint TotalTrips = 0;
     mapping(uint => trip) public AllTrips;
     mapping(uint => mapping(address => bool)) public userVote;
+    mapping(address => uint) public userAmount;
     mapping(address => bool) public userShare;
     trip st;
     trip public selectedTrip;
     uint public selectedTripId;
     address public owner;
     bool isTripSelected;
+    bool isTripStarted;
     event tripStarted(string message);
+    event tripCancelled(string reason);
 
     constructor( ){
         owner = msg.sender;
@@ -137,11 +140,30 @@ contract demo{
 
         trip memory t = AllTrips[selectedTripId];
         require(address(this).balance >= t.budget * group.length, "Wallet balance does't match trip budget");
+        require(msg.sender == t.person , "Only the trip leader can start trip");
         emit tripStarted("Trip has been started");
+        isTripStarted = true;
     }
 
-    function checkBalance() public view returns(uint){
-        return address(this).balance;
+    function cancelTrip() public{
+        require(checkUserExists(msg.sender) , "You are not a part of group");
+        require(isVotingCompleted() , "Voting is not ended");
+        require(isTripSelected , "No trip selected till NoW!");
+        require(!isTripStarted , "Trip has already started");
+        require(address(this).balance > 0 , "Not having balance in the wallet");
+        
+        trip memory t = AllTrips[selectedTripId];
+        require(msg.sender == t.person , "Only the trip leader can cancel trip");
+        uint value ;
+        address payable person;
+        for(uint i = 0 ; i < group.length; i++){
+            if(userShare[group[i]] == true){
+                value = userAmount[group[i]];
+                person = payable(group[i]);
+                person.transfer(value);
+            }
+        }
+        emit tripCancelled("Due to some of the weather issue. The trip has been cancelled");    
     }
 
     function payYourShare() public payable {
@@ -155,5 +177,6 @@ contract demo{
         }
         userVote[selectedTripId][msg.sender] = true;
         userShare[msg.sender] = true;
+        userAmount[msg.sender] = msg.value;
     }
 }
